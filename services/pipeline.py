@@ -15,6 +15,7 @@ from . import (
     get_verdict_and_reason,
     get_embedding,
 )
+from .diff_extractor import key_fields_indicate_different_claim
 from .db import get_next_claim_id
 
 
@@ -54,8 +55,15 @@ def run_verification(file_bytes: bytes, filename: str = "") -> dict[str, Any]:
     new_fields = extract_key_fields(extracted_text)
     differences = compute_differences(new_fields, existing_fields) if existing_fields else []
 
-    # 4. Agent verdict (only when we have a comparison)
-    if compared_with and duplication_pct >= settings.DUPLICATION_THRESHOLD_PCT:
+    # 3b. Same form template but different claim? (e.g. different policy holder, policy, amount)
+    # Avoid false duplicate when two forms share layout but are different claims.
+    if compared_with and key_fields_indicate_different_claim(new_fields, existing_fields):
+        duplication_pct = 0.0
+        status = "accepted"
+        key_differences_str = "Different claim (different policy holder, policy number, amount, or date)."
+        rejection_reason = ""
+    # 4. Agent verdict (only when we have a comparison and not already ruled different)
+    elif compared_with and duplication_pct >= settings.DUPLICATION_THRESHOLD_PCT:
         agent_out = get_verdict_and_reason(duplication_pct, compared_with, differences)
         status = agent_out["status"]
         key_differences_str = agent_out["key_differences"]
